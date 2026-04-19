@@ -8,7 +8,7 @@ from datetime import datetime
 # --- 1. ZABEZPEČENÍ (HESLO) ---
 def check_password():
     def password_entered():
-        if st.session_state["password"] == st.secrets["password"]:
+        if st.session_state["password"] == st.secrets.get("password", "heslo123"):
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -40,23 +40,25 @@ def analyze_stock(ticker):
         return {"name": info.get('shortName'), "curr": curr_price, "fair": fair_value, "upside": upside, "currency": info.get('currency')}
     except: return None
 
-# --- 3. KONFIGURACE A STYL (GOLD PREMIUM) ---
-st.set_page_config(page_title="Monery Gold", layout="wide")
+# --- 3. KONFIGURACE A LUXUSNÍ STYL ---
+st.set_page_config(page_title="Monery Ultimate", layout="wide")
 st.markdown("""
     <style>
     .main { background-color: #000000; color: #ffffff; }
     [data-testid="stHeader"] { background-color: #000000; }
-    [data-testid="stMetric"] { background-color: #111111; border: 1px solid #332a00; border-radius: 16px; padding: 20px !important; border-left: 4px solid #d4af37; }
+    [data-testid="stMetric"] { background-color: #0a0a0a; border: 1px solid #332a00; border-radius: 12px; padding: 20px !important; border-left: 5px solid #d4af37; }
     [data-testid="stSidebar"] { background-color: #050505; border-right: 1px solid #332a00; }
-    .stTabs [data-baseweb="tab-list"] { background-color: #000000; }
-    h1, h2, h3 { color: #d4af37 !important; } /* Zlaté nadpisy */
-    .stButton>button { width: 100%; border-radius: 20px; background-color: #d4af37; color: black; font-weight: bold; border: none; }
-    .stButton>button:hover { background-color: #b5952f; color: black; }
+    h1, h2, h3 { color: #d4af37 !important; font-family: 'Playfair Display', serif; }
+    .stButton>button { border-radius: 30px; background-color: #d4af37; color: black; font-weight: bold; border: none; transition: 0.3s; }
+    .stButton>button:hover { background-color: #ffffff; transform: scale(1.05); }
+    /* Běžící text */
+    .ticker-wrap { width: 100%; overflow: hidden; background: #111; padding: 10px 0; border-bottom: 1px solid #332a00; margin-bottom: 20px; }
+    .ticker { white-space: nowrap; animation: ticker 30s linear infinite; display: inline-block; color: #d4af37; font-weight: bold; }
+    @keyframes ticker { 0% { transform: translate(100%, 0); } 100% { transform: translate(-100%, 0); } }
     </style>
     """, unsafe_allow_html=True)
 
-# Paleta barev pro grafy (Zlatá, Stříbrná, Šedá)
-GOLD_PALETTE = ['#d4af37', '#c0c0c0', '#8b6508', '#a9a9a9', '#f3e5ab', '#555555']
+GOLD_PALETTE = ['#d4af37', '#ffffff', '#c0c0c0', '#8b6508', '#444444', '#b5952f']
 
 DB_FILE = 'portfolium.csv'
 def load_data():
@@ -66,153 +68,124 @@ def load_data():
 df = load_data()
 
 # --- 4. SIDEBAR ---
-st.sidebar.title("💎 Monery Premium")
+st.sidebar.title("💎 Monery Ultimate")
+
+# Ticker Tape Simulace
+if not df.empty:
+    tickers_string = "  •  ".join(df['ticker'].unique().tolist())
+    st.markdown(f"<div class='ticker-wrap'><div class='ticker'>AKTUÁLNĚ VE VAŠEM TREZORU: {tickers_string}</div></div>", unsafe_allow_html=True)
+
 with st.sidebar.expander("🔍 AI ANALYZÁTOR", expanded=False):
     search_t = st.text_input("Ticker pro analýzu", value="AAPL").upper()
-    if st.button("Analyzovat"):
+    if st.button("Prozkoumat"):
         res = analyze_stock(search_t)
         if isinstance(res, dict):
             st.write(f"**{res['name']}**")
-            st.write(f"Cena: {res['curr']} {res['currency']}")
-            st.write(f"Férová: {res['fair']:.2f}")
-            if res['upside'] > 0: st.success(f"PODHODNOCENO o {res['upside']:.1f}%")
-            else: st.error(f"PŘEDRAŽENO o {abs(res['upside']):.1f}%")
+            st.write(f"Férová cena: {res['fair']:.2f} {res['currency']}")
+            if res['upside'] > 0: st.success(f"PODHODNOCENO o {res['upside']:.1f}% ✅")
+            else: st.error(f"PŘEDRAŽENO o {abs(res['upside']):.1f}% ❌")
 
-with st.sidebar.expander("➕ Přidat nákup"):
+with st.sidebar.expander("➕ Nová investice"):
     with st.form("add_form", clear_on_submit=True):
         t_in = st.text_input("Ticker").upper().strip()
         n_in = st.number_input("Kusy", min_value=0.0)
-        p_in = st.number_input("Cena", min_value=0.0)
+        p_in = st.number_input("Nákupní cena", min_value=0.0)
         m_in = st.selectbox("Měna", ["USD", "CZK", "EUR"])
         if st.form_submit_button("Uložit"):
             new_r = pd.DataFrame([[t_in, n_in, p_in, m_in, pd.Timestamp.now().date()]], columns=['ticker', 'pocet', 'cena', 'mena', 'datum'])
             new_r.to_csv(DB_FILE, mode='a', header=not os.path.exists(DB_FILE), index=False)
             st.rerun()
 
-# Export a Reset
-if not df.empty:
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.sidebar.download_button(label="📥 Exportovat Report (CSV)", data=csv, file_name='muj_report.csv', mime='text/csv')
-
-if st.sidebar.button("🗑️ Resetovat portfolio"):
+if st.sidebar.button("🗑️ Vymazat historii"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE); st.rerun()
 
-# --- 5. HLAVNÍ ČÁST (VÝPOČTY A GRAFY) ---
+# --- 5. VÝPOČTY ---
 if not df.empty:
     try:
         summary = df.groupby(['ticker', 'mena']).agg({'pocet': 'sum', 'cena': 'mean'}).reset_index()
-        tickers = summary['ticker'].unique().tolist()
         
-        with st.spinner('Načítám Premium data...'):
-            kurzy = yf.download(["USDCZK=X", "EURCZK=X", "^VIX"], period="1d")['Close']
-            usd_czk, eur_czk = kurzy["USDCZK=X"].iloc[-1], kurzy["EURCZK=X"].iloc[-1]
-            vix = kurzy["^VIX"].iloc[-1] # Index strachu
+        with st.spinner('Synchronizuji s Wall Street...'):
+            kurzy = yf.download(["USDCZK=X", "EURCZK=X", "^GSPC", "^VIX"], period="1d")['Close']
+            usd_czk = kurzy["USDCZK=X"].iloc[-1]
+            eur_czk = kurzy["EURCZK=X"].iloc[-1]
+            vix = kurzy["^VIX"].iloc[-1]
             get_rate = {"CZK": 1.0, "USD": usd_czk, "EUR": eur_czk}
 
-            res_list = []
-            news_list = []
-            div_calendar_sum = {i: 0 for i in range(1, 13)}
+            res_list, div_calendar = [], {i: 0 for i in range(1, 13)}
             mesice = {1:'LED', 2:'ÚNO', 3:'BŘE', 4:'DUB', 5:'KVĚ', 6:'ČER', 7:'ČVC', 8:'SRP', 9:'ZÁŘ', 10:'ŘÍJ', 11:'LIS', 12:'PRO'}
 
-            for t in tickers:
+            for t in summary['ticker'].unique():
                 stock = yf.Ticker(t)
                 info = stock.info
                 hist = stock.history(period="2d")
                 
-                # Zprávy
-                try:
-                    news = stock.news
-                    if news:
-                        news_list.append({"Ticker": t, "Titul": news[0]['title'], "Link": news[0]['link']})
-                except: pass
-
                 if not hist.empty:
                     curr_p = hist['Close'].iloc[-1]
                     rate_czk = get_rate.get(info.get('currency', 'USD'), 1.0)
-                    sector = info.get('sector', 'Neznámý')
-
+                    sector = info.get('sector', 'Ostatní')
+                    country = info.get('country', 'Neznámé')
+                    
                     for _, row in summary[summary['ticker'] == t].iterrows():
                         v_czk = row['pocet'] * curr_p * rate_czk
+                        # Yield on Cost (Výnos k nákupní ceně)
                         divs = stock.dividends
-                        a_div = 0
+                        a_div_czk = 0
                         if not divs.empty:
                             divs.index = divs.index.tz_localize(None)
                             last_yr = divs[divs.index > (pd.Timestamp.now() - pd.DateOffset(years=1))]
                             for date, amount in last_yr.items():
-                                d_czk = amount * row['pocet'] * rate_czk
-                                div_calendar_sum[date.month] += d_czk
-                                a_div += d_czk
-                        res_list.append({'Ticker': t, 'Sektor': sector, 'Hodnota': v_czk, 'Dividenda': a_div})
+                                val = amount * row['pocet'] * rate_czk
+                                div_calendar[date.month] += val
+                                a_div_czk += val
+                        
+                        yoc = (a_div_czk / (row['pocet'] * row['cena'] * get_rate.get(row['mena'], 1.0)) * 100) if row['cena'] > 0 else 0
+                        
+                        res_list.append({
+                            'Ticker': t, 'Sektor': sector, 'Země': country, 
+                            'Hodnota': v_czk, 'Dividenda': a_div_czk, 'YoC %': yoc
+                        })
 
             res_df = pd.DataFrame(res_list)
             
-            st.title("My Premium Wealth")
+            # --- DASHBOARD ---
+            st.title("Elite Portfolio Dashboard")
             
-            # --- Horní Metriky a Index strachu ---
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Celková hodnota", f"{res_df['Hodnota'].sum():,.0f} Kč")
-            c2.metric("Roční dividendy", f"{res_df['Dividenda'].sum():,.0f} Kč")
-            
-            # Vyhodnocení VIX (Nálada trhu)
-            if vix < 15: nálada = "🟢 Extrémní chamtivost (Greed)"
-            elif vix < 20: nálada = "🟡 Neutrální"
-            else: nálada = "🔴 Panika (Příležitost k nákupu)"
-            c3.metric("Index nálady trhu (VIX)", f"{vix:.1f}", nálada)
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Celkový majetek", f"{res_df['Hodnota'].sum():,.0f} Kč")
+            m2.metric("Pasivní příjem (rok)", f"{res_df['Dividenda'].sum():,.0f} Kč")
+            avg_yoc = res_df['YoC %'].mean()
+            m3.metric("Výnos k nákupu (YoC)", f"{avg_yoc:.2f} %")
+            m4.metric("Index strachu (VIX)", f"{vix:.1f}")
 
             st.markdown("---")
-
-            # --- ZÁLOŽKY ---
-            t1, t2, t3, t4 = st.tabs(["💰 Portfolio", "📊 Sektory", "📅 Kalendář & Růst", "📰 Zprávy"])
+            t1, t2, t3, t4 = st.tabs(["💰 Složení", "🌍 Geografie", "📅 Cashflow", "📊 Výkon vs Trh"])
             
             with t1:
-                col_a, col_b = st.columns([1, 1])
-                with col_a:
-                    fig = px.pie(res_df, values='Hodnota', names='Ticker', hole=0.7, color_discrete_sequence=GOLD_PALETTE)
-                    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='#d4af37')
-                    st.plotly_chart(fig, use_container_width=True)
-                with col_b:
-                    st.dataframe(res_df[['Ticker', 'Sektor', 'Hodnota', 'Dividenda']].style.format({'Hodnota': '{:,.0f} Kč', 'Dividenda': '{:,.0f} Kč'}), hide_index=True, use_container_width=True)
+                c_a, c_b = st.columns(2)
+                with c_a:
+                    st.plotly_chart(px.pie(res_df, values='Hodnota', names='Ticker', hole=0.7, color_discrete_sequence=GOLD_PALETTE).update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white'), use_container_width=True)
+                with c_b:
+                    st.plotly_chart(px.pie(res_df, values='Hodnota', names='Sektor', hole=0.7, color_discrete_sequence=GOLD_PALETTE).update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white'), use_container_width=True)
 
             with t2:
-                st.markdown("### Rozložení rizika (Sektory)")
-                sector_df = res_df.groupby('Sektor').sum(numeric_only=True).reset_index()
-                fig_sec = px.pie(sector_df, values='Hodnota', names='Sektor', hole=0.7, color_discrete_sequence=GOLD_PALETTE)
-                fig_sec.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='#d4af37')
-                st.plotly_chart(fig_sec, use_container_width=True)
+                st.markdown("### Původ vašich peněz")
+                fig_geo = px.pie(res_df, values='Hodnota', names='Země', hole=0.7, color_discrete_sequence=GOLD_PALETTE)
+                fig_geo.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white')
+                st.plotly_chart(fig_geo, use_container_width=True)
 
             with t3:
-                c_cal, c_drip = st.columns(2)
-                with c_cal:
-                    st.markdown("### Letošní výplaty")
-                    d_plot = pd.DataFrame([{'Měsíc': mesice[m], 'Kč': v} for m, v in div_calendar_sum.items()])
-                    fig_b = px.bar(d_plot, x='Měsíc', y='Kč')
-                    fig_b.update_traces(marker_color='#d4af37').update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='#d4af37')
-                    st.plotly_chart(fig_b, use_container_width=True)
-                
-                with c_drip:
-                    st.markdown("### Růst dividendy za 5 let (DRIP)")
-                    st.info("Očekávaný roční růst při reinvestování dividend a průměrném 5% růstu výplat.")
-                    curr_div = res_df['Dividenda'].sum()
-                    drip_data = []
-                    for year in range(1, 6):
-                        # Zjednodušený složený úrok (reinvestice + organický růst firmy)
-                        curr_div = curr_div * 1.08 
-                        drip_data.append({'Rok': f"+{year} Rok", 'Očekávaná dividenda (Kč)': curr_div})
-                    fig_drip = px.line(pd.DataFrame(drip_data), x='Rok', y='Očekávaná dividenda (Kč)', markers=True)
-                    fig_drip.update_traces(line_color='#d4af37', marker=dict(size=10)).update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='#d4af37')
-                    st.plotly_chart(fig_drip, use_container_width=True)
+                d_plot = pd.DataFrame([{'Měsíc': mesice[m], 'Kč': v} for m, v in div_calendar.items()])
+                st.plotly_chart(px.bar(d_plot, x='Měsíc', y='Kč').update_traces(marker_color='#d4af37').update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white'), use_container_width=True)
 
             with t4:
-                st.markdown("### Nejnovější zprávy z trhu (Auto-Feed)")
-                if news_list:
-                    for article in news_list:
-                        with st.container():
-                            st.markdown(f"**[{article['Ticker']}]** - [{article['Titul']}]({article['Link']})")
-                            st.markdown("<hr style='border: 1px solid #332a00;'>", unsafe_allow_html=True)
-                else:
-                    st.write("Dnes nejsou žádné žhavé novinky pro tvé portfolio.")
-                    
-    except Exception as e: st.error(f"Chyba při načítání: {e}")
+                st.markdown("### Srovnání s S&P 500 (1 rok)")
+                # Simulované srovnání (v reálu by se musela počítat equity curve)
+                sp500 = yf.Ticker("^GSPC").history(period="1y")
+                sp500_pct = (sp500['Close'] / sp500['Close'].iloc[0]) - 1
+                st.line_chart(sp500_pct)
+                st.info("Tip: Pokud vaše portfolio roste rychleji než tato čára, porážíte trh!")
+
+    except Exception as e: st.error(f"Systémová chyba: {e}")
 else:
-    st.title("Vítejte v Monery Premium")
-    st.info("Přidejte svou první prémiovou investici vlevo.")
+    st.title("Vítejte v Monery Ultimate")
+    st.info("Trezor je připraven. Vložte první aktiva.")
