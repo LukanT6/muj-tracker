@@ -3,7 +3,7 @@ import pandas as pd
 import yfinance as yf
 import plotly.express as px
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Konfigurace
 st.set_page_config(page_title="Invest Tracker Pro", layout="wide")
@@ -19,7 +19,6 @@ st.markdown("""
 
 DB_FILE = 'portfolium.csv'
 
-# Načtení dat se základní kontrolou
 def load_data():
     if not os.path.exists(DB_FILE):
         return pd.DataFrame(columns=['ticker', 'pocet', 'cena_usd', 'datum'])
@@ -54,7 +53,6 @@ if not df.empty:
         tickers = portfolio_summary['ticker'].tolist()
         
         with st.spinner('Stahuji data...'):
-            # Stáhneme kurz koruny
             kurz_data = yf.Ticker("USDCZK=X").history(period="1d")
             kurz = kurz_data['Close'].iloc[-1]
             
@@ -62,21 +60,25 @@ if not df.empty:
             div_calendar = {i: 0 for i in range(1, 13)}
             mesice_nazvy = {1:'Led', 2:'Úno', 3:'Bře', 4:'Dub', 5:'Kvě', 6:'Čer', 7:'Čvc', 8:'Srp', 9:'Zář', 10:'Říj', 11:'Lis', 12:'Pro'}
 
+            now = pd.Timestamp.now(tz=None) # Čas bez pásma pro porovnání
+
             for t in tickers:
                 stock = yf.Ticker(t)
                 hist = stock.history(period="2d")
                 
                 if not hist.empty:
                     curr_p = hist['Close'].iloc[-1]
-                    hodnota_czk = portfolio_summary[portfolio_summary['ticker'] == t]['pocet'].values[0] * curr_p * kurz
+                    total_ks = portfolio_summary[portfolio_summary['ticker'] == t]['pocet'].values[0]
+                    hodnota_czk = total_ks * curr_p * kurz
                     
-                    # Dividendy (jen pokud existují)
+                    # OPRAVA DIVIDEND: Převedeme čas dividend na "naivní" formát bez časových pásem
                     divs = stock.dividends
                     annual_div_czk = 0
                     if not divs.empty:
-                        last_year = divs[divs.index > (datetime.now() - pd.DateOffset(years=1))]
+                        divs.index = divs.index.tz_localize(None) # Odstraní časové pásmo
+                        last_year = divs[divs.index > (now - pd.DateOffset(years=1))]
                         for date, amount in last_year.items():
-                            val = amount * portfolio_summary[portfolio_summary['ticker'] == t]['pocet'].values[0] * kurz
+                            val = amount * total_ks * kurz
                             div_calendar[date.month] += val
                             annual_div_czk += val
 
@@ -84,7 +86,6 @@ if not df.empty:
 
             res_df = pd.DataFrame(res_list)
             
-            # Zobrazení
             c1, c2 = st.columns(2)
             c1.metric("Celková hodnota", f"{res_df['Hodnota (CZK)'].sum():,.0f} Kč")
             c2.metric("Roční dividendy", f"{res_df['Roční Divi'].sum():,.0f} Kč")
