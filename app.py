@@ -99,7 +99,9 @@ if not df.empty:
             usd_czk, eur_czk = kurzy["USDCZK=X"].iloc[-1], kurzy["EURCZK=X"].iloc[-1]
             get_rate = {"CZK": 1.0, "USD": usd_czk, "EUR": eur_czk}
 
-            res_list, div_calendar = [], {i: 0 for i in range(1, 13)}
+            res_list = []
+            div_calendar_sum = {i: 0 for i in range(1, 13)}
+            div_details = [] # Seznam pro detailní rozpis
             mesice = {1:'LED', 2:'ÚNO', 3:'BŘE', 4:'DUB', 5:'KVĚ', 6:'ČER', 7:'ČVC', 8:'SRP', 9:'ZÁŘ', 10:'ŘÍJ', 11:'LIS', 12:'PRO'}
 
             for t in tickers:
@@ -117,8 +119,14 @@ if not df.empty:
                             last_yr = divs[divs.index > (pd.Timestamp.now() - pd.DateOffset(years=1))]
                             for date, amount in last_yr.items():
                                 d_czk = amount * row['pocet'] * rate_czk
-                                div_calendar[date.month] += d_czk
+                                div_calendar_sum[date.month] += d_czk
                                 a_div += d_czk
+                                # Uložíme informaci o konkrétní výplatě
+                                div_details.append({
+                                    'Měsíc': mesice[date.month],
+                                    'Akcie': t,
+                                    'Částka (Kč)': d_czk
+                                })
                         res_list.append({'Ticker': t, 'Hodnota': v_czk, 'Dividenda': a_div})
 
             res_df = pd.DataFrame(res_list)
@@ -134,10 +142,27 @@ if not df.empty:
                 st.plotly_chart(fig, use_container_width=True)
                 st.dataframe(res_df, hide_index=True, use_container_width=True)
             with t2:
-                d_plot = pd.DataFrame([{'Měsíc': mesice[m], 'Kč': v} for m, v in div_calendar.items()])
+                # Graf měsíčních příjmů
+                d_plot = pd.DataFrame([{'Měsíc': mesice[m], 'Kč': v} for m, v in div_calendar_sum.items()])
                 fig_b = px.bar(d_plot, x='Měsíc', y='Kč')
                 fig_b.update_traces(marker_color='#ffffff').update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white')
                 st.plotly_chart(fig_b, use_container_width=True)
+                
+                # NOVINKA: Detailní rozpis akcií podle měsíců
+                if div_details:
+                    st.markdown("### Detail výplat")
+                    detail_df = pd.DataFrame(div_details)
+                    # Seskupíme podle měsíce a akcie (kdyby jedna akcie platila vícekrát za měsíc)
+                    detail_df = detail_df.groupby(['Měsíc', 'Akcie']).sum().reset_index()
+                    # Seřadíme podle pořadí měsíců
+                    mesice_order = list(mesice.values())
+                    detail_df['Měsíc'] = pd.Categorical(detail_df['Měsíc'], categories=mesice_order, ordered=True)
+                    detail_df = detail_df.sort_values('Měsíc')
+                    
+                    st.dataframe(detail_df, hide_index=True, use_container_width=True)
+                else:
+                    st.info("Žádné dividendy k zobrazení.")
+                    
     except Exception as e: st.error(f"Chyba: {e}")
 else:
     st.title("Vítejte v Monery")
